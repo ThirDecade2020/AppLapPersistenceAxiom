@@ -1,47 +1,194 @@
-# Persistence Layer: Mathematical Specification
+# AppLap Persistence Axioms — Top 10
 
-## Purpose
-The Persistence layer defines the authoritative state space `S` of the system, encoding all durable information. It guarantees that state persists across program executions, machine restarts, and power cycles, without reliance on third-party systems.
+## Persistence Axiom 1 — Fixed-Size Records
 
-## Scope
-- State `S` is fully controlled and represented as bytes on the local storage medium.
-- All operations on `S` must preserve invariants defined in this specification.
-- No external database engines, cloud services, or runtime abstractions are used.
+**What**  
+Each record occupies a fixed number of bytes in storage.
 
-## Core Objects
+**Why**  
+Fixed-size records allow deterministic addressing, simplify memory layout, and make computation of offsets straightforward.
 
-1. **State Space**
-   - Let S be the total system state: S = { r_0, r_1, ..., r_n }
-   - Each r_i is a record mapping key k_i to value v_i
-   - r_i : K → V ∪ {⊥}, where ⊥ denotes absence
+### Mathematical Solution (Maths)
+size(r_i) = constant_bytes  
+# Each record occupies the same number of bytes
 
-2. **Keys**
-   - K = {k_0, k_1, ..., k_m} is the set of all valid keys
-   - Keys are fixed-width byte sequences for deterministic addressing
+### Assembly Language Solution (Codes)
+.align 8                    
+record:
+    .space constant_bytes   
 
-3. **Values**
-   - V = {v_0, v_1, ..., v_p} is the set of all valid values
-   - Values are fixed-width byte sequences; variable-length values can be added in later iterations
+---
 
-## Invariants
+## Persistence Axiom 2 — Atomic Writes
 
-- **Uniqueness:** ∀ r_i, r_j ∈ S, if i ≠ j then k_i ≠ k_j
-- **Deterministic Mapping:** The address of r_i in state storage is computable from k_i
-- **Persistence:** Once r_i is written to disk, it remains retrievable until explicitly deleted
-- **Isolation:** No external system may modify S outside defined operations
-- **Page Integrity:** Pages storing records must not overlap; each page has a fixed size and byte alignment
+**What**  
+Writes to persistent storage must be atomic.
 
-## Operations
+**Why**  
+Prevents partially-written records from corrupting the state in crashes or power loss.
 
-- `get(k) : S → V ∪ {⊥}` — Retrieves the value for key k
-- `insert(k, v) : S → S` — Adds or updates record r = (k, v)
-- `delete(k) : S → S` — Removes record with key k
-- `range(k1, k2) : S → {r_i | k1 ≤ k_i ≤ k2}` — Returns all records within the key range
+### Mathematical Solution (Maths)
+∀ r_i ∈ S, write(r_i) → complete or no_change  
+# Either fully succeed or leave previous state intact
 
-## Physical Mapping (Informal)
+### Assembly Language Solution (Codes)
+mov x16, #5       // sys_open
+mov x0, fd_path
+mov x1, #0x201    // O_CREAT | O_WRONLY | O_TRUNC
+svc #0
+mov x16, #4       // sys_write
+svc #0
+mov x16, #6       // sys_close
+svc #0
 
-- S is stored as fixed-size pages in the `state/` directory.
-- Each record r_i occupies a fixed byte layout within a page.
-- Pages are addressed sequentially on disk; mapping from key K to disk offset is deterministic.
-- Alignment with cache lines and page boundaries is maintained for hardware efficiency.
+---
+
+## Persistence Axiom 3 — Deterministic Addressing
+
+**What**  
+The location of each record is computable from its key.
+
+**Why**  
+Direct access to any record without searching, enabling fast retrieval.
+
+### Mathematical Solution (Maths)
+addr(r_i) = base_page + size(r_i) * index(k_i)  
+# Storage address = page base + key-derived offset
+
+### Assembly Language Solution (Codes)
+adrp x1, page@PAGE         
+add  x1, x1, buffer_offset 
+
+---
+
+## Persistence Axiom 4 — Isolation
+
+**What**  
+No external process may modify the state outside defined routines.
+
+**Why**  
+Prevents corruption and ensures only authorized routines can modify state.
+
+### Mathematical Solution (Maths)
+∀ r_i ∈ S, external_write(r_i) ⇒ invalid  
+
+### Assembly Language Solution (Codes)
+mov x16, #5       
+mov x0, fd_path   
+mov x1, #0x201    
+svc #0            
+
+---
+
+## Persistence Axiom 5 — Page Integrity
+
+**What**  
+Pages must not overlap and must have fixed size and alignment.
+
+**Why**  
+Ensures deterministic addressing and hardware-aligned storage.
+
+### Mathematical Solution (Maths)
+∀ P_i, P_j ∈ S, i ≠ j ⇒ P_i ∩ P_j = ∅  
+
+### Assembly Language Solution (Codes)
+.section __DATA,__data
+page:
+    .align 8   
+    .space 256 
+
+---
+
+## Persistence Axiom 6 — Key Uniqueness
+
+**What**  
+Each key in the state space is unique.
+
+**Why**  
+Prevents collisions and ensures that every record is identifiable by its key.
+
+### Mathematical Solution (Maths)
+∀ r_i, r_j ∈ S, i ≠ j ⇒ k_i ≠ k_j  
+
+### Assembly Language Solution (Codes)
+// Check before insert/update that no duplicate keys exist
+// Example conceptual assembly: compute key address and compare with existing keys
+
+---
+
+## Persistence Axiom 7 — Value Integrity
+
+**What**  
+Values stored must exactly match what was written.
+
+**Why**  
+Guarantees that persisted data remains unchanged until explicitly updated.
+
+### Mathematical Solution (Maths)
+read(r_i) = v_i, ∀ r_i ∈ S  
+
+### Assembly Language Solution (Codes)
+ldr b0, [x_addr]    // Load byte from storage
+cmp b0, expected_val // Compare with expected
+// Loop through record to verify integrity
+
+---
+
+## Persistence Axiom 8 — Range Queries
+
+**What**  
+It must be possible to retrieve all records within a contiguous key range efficiently.
+
+**Why**  
+Allows batch reads or analytics without scanning the entire state space.
+
+### Mathematical Solution (Maths)
+range(k1, k2) = { r_i | k1 ≤ k_i ≤ k2 }  
+
+### Assembly Language Solution (Codes)
+// Compute start offset for k1, iterate through page until k2
+adrp x1, page@PAGE
+add  x1, x1, offset(k1)
+// Loop and read records until k2 reached
+
+---
+
+## Persistence Axiom 9 — Recoverable State
+
+**What**  
+After a crash or restart, all previously persisted records must be recoverable.
+
+**Why**  
+Ensures continuity and reliability of the application state.
+
+### Mathematical Solution (Maths)
+∀ r_i ∈ S, write(r_i) → r_i ∈ S after restart  
+
+### Assembly Language Solution (Codes)
+// Open file, read into page buffer
+mov x16, #5
+mov x0, fd_path
+mov x1, #0       // O_RDONLY
+svc #0
+mov x16, #0      // sys_read
+svc #0
+
+---
+
+## Persistence Axiom 10 — Minimal Footprint
+
+**What**  
+State storage must avoid wasting space and align data to pages efficiently.
+
+**Why**  
+Improves performance and reduces I/O overhead.
+
+### Mathematical Solution (Maths)
+Σ size(r_i) ≤ page_size, aligned  
+
+### Assembly Language Solution (Codes)
+.align 8
+page:
+    .space 256      // allocate single page efficiently
+// Use fixed offsets for each record
 
