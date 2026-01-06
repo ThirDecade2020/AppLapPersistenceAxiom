@@ -118,3 +118,42 @@ Allows the user to view the current state of the persisted data.
 
 ```bash
 ./query_color
+
+## Instructions Folder Overview
+
+The `instructions/` directory contains all low-level routines that operate on the persisted state (`state/page0.bin`). Each routine follows a standard assembly workflow: source `.s` → object `.o` → executable (no extension).
+
+### File Types and Workflow
+
+| File Type | Purpose |
+|-----------|---------|
+| `.s`      | **Assembly Source** – Human-readable ARM64 assembly code you write and edit. Examples: `create_page.s`, `increment_color.s`. |
+| `.o`      | **Object File** – Compiled machine code generated from the `.s` source. Can be linked with other object files. Examples: `create_page.o`, `increment_color.o`. |
+| *(no extension)* | **Executable** – The runnable program, produced by linking one or more `.o` files. Examples: `create_page`, `increment_color`. Run with `./<executable>` in the terminal. |
+
+### Routine Descriptions
+
+- **create_page / create_page.s / create_page.o**  
+  Creates a blank 256-byte page file (`page0.bin`) in the `state/` directory. Sets up the initial persistent state.
+
+- **increment_color / increment_color.s / increment_color.o**  
+  Loads a persisted page into memory and increments the value for a single color ID. Demonstrates low-level modification of persisted data.
+
+- **increment_color_multi / increment_color_multi.s / increment_color_multi.o**  
+  Similar to `increment_color`, but can increment multiple color IDs or demonstrate more complex manipulations on the persisted page.
+
+- **persist_page / persist_page.s / persist_page.o**  
+  Writes the in-memory page buffer back to disk, ensuring that modifications are durable.
+
+- **query_color / query_color.s / query_color.o**  
+  Loads a persisted page into memory and retrieves the count for a given color ID without modifying the state.
+
+- **page_buffer.s / page_buffer.o**  
+  Defines a shared 256-byte page buffer used by multiple routines. Ensures all operations manipulate the same in-memory page before persisting.
+
+### Notes
+
+- Each routine demonstrates **direct memory and disk operations** in ARM64 assembly, reflecting the persistence axioms of AppLap.  
+- The `.o` files are intermediate; the actual programs you run are the executables.  
+- Using this workflow, you can inspect, modify, and persist state at the **lowest level**, mapping closely to the mathematical model of persistent state.
+
